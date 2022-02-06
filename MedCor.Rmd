@@ -1,0 +1,192 @@
+---
+title: "Light MedCor"
+author: "Jean-Pierre Gattuso, CNRS-Sorbonne University (jean-pierre.gattuso@imev-mer.fr)"
+date: '`r format(Sys.Date(), "%d %B %Y")`'
+output:
+  html_document:
+  code_folding: hide
+fig_caption: yes
+toc: no
+toc_float: no
+pdf_document:
+  toc: no
+---
+  
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE)
+if (!require("tidyverse")) install.packages("tidyverse")
+library("tidyverse")
+if (!require("readxl")) install.packages("readxl")
+library("readxl")
+if (!require("writexl")) install.packages("writexl")
+library("writexl")
+if (!require("FNN")) install.packages("FNN")
+library("FNN") # For fastest nearest neighbour searching
+if (!require("devtools")) install.packages("devtools")
+library(devtools)
+if (!require("CoastalLight")) install_github("jpgattuso/CoastalLight")
+library(CoastalLight)
+# function to transform coordinates
+source("https://raw.githubusercontent.com/AMBarbosa/unpackaged/master/dms2dec", encoding = "UTF-8")
+```
+
+## Method
+
+This script uses the R package CoastalLight described in the following paper:
+
+Gattuso J.-P., Gentili B., Antoine D. & Doxaran D., 2020. Global distribution of photosynthetically available radiation on the seafloor. Earth System Science Data 12:1697-1709. http://dx.doi.org/10.5194/essd-12-1697-2020
+
+The goal is to get bottom irradiance at specific locations. It can be done anywhere in the global ocean as the data products are global (and open access). I get the data of about 30 cells (squares of ca 450 m on each side). Depth is in (negative) meter and bottom PAR in mol/m2/day. 
+
+**Beware** that the script is slow when it is first run because two big files need to be downloaded from Pangaea. It will subsequently run faster (but not lighting fast!). **Be patient!**
+
+**Important note :**
+  Some sites have been skipped because no GEBCO coastal (<200 m) cell was found in the square defined above
+
+```{r read Camp data, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+# https://buckeyemailosu-my.sharepoint.com/:x:/r/personal/grottoli_1_osu_edu/_layouts/15/Doc.aspx?sourcedoc=%7B2196B3EB-317E-4FAC-8B4A-426D1DF5F4A0%7D&file=Camp%20et%20al%202018%20Abiotic%20Literature%20Search_Annotated_Grottoli.xlsx&action=default&mobileredirect=true
+geo <- readxl::read_excel(path = "data/camp.xlsx", sheet = "GPS Coordinates")
+geo <- geo %>% 
+  dplyr::mutate(id = seq(1:nrow(geo)),
+                lat = dms2dec(latitude),
+                lon = dms2dec(longitude)
+  ) %>% 
+  dplyr::select(id, everything()) #%>% 
+  #dplyr::slice_head(n = 5)
+```
+
+```{r read PAR data, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+if(!dir.exists("data/CoastalLight.d")){
+  for (month in 0:12) {
+    cl_DownloadData(month = month, dirdata = "data/CoastalLight.d")
+  }
+}
+```
+
+```{r annual PAR, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+light_annual <-  NULL
+i <- 0
+for (j in 1:nrow(geo)) {
+#for (j in 1:10) {
+  i <- i + 1
+  #print(i)
+  print(paste0("Entry: ", j))
+  z <- cl_GetData(lon=c(geo$lon[i]-0.015, geo$lon[i]+0.015), lat=c(geo$lat[i]-0.015, geo$lat[i]+0.015), month = 0)
+  d <- dplyr::as_tibble(z$data) %>%
+    dplyr::select(depth, area, par, kdpar, parbottom) %>%
+    dplyr::mutate(depth = -depth)
+  d_one <- d %>% # one line summary for this location
+    dplyr::summarise_all(mean) %>%
+    dplyr::mutate(
+      n = nrow(d),
+      parbottom10 = par * exp(-kdpar * 10)
+    )
+  light_annual <- dplyr::bind_rows(light, d_one)
+}
+geo2 <- cbind(geo, light_annual) 
+write_csv(x = geo2, file = "data/geo2.csv")
+writexl::write_xlsx(x = geo2, path = "data/geo2.xlxs")
+```
+
+```{r monthly PAR, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+light_month <-  NULL
+  for (j in 1:nrow(geo)) {
+    for (m in 1:12) {
+#  for (j in 1:1) {
+  i <- i + 1
+  print(paste("id =", j, " - month =", m, sep = " "))
+  z <- cl_GetData(lon=c(geo$lon[j]-0.015, geo$lon[j]+0.015), lat=c(geo$lat[j]-0.015, geo$lat[j]+0.015), 
+                  dirdata = "data/CoastalLight.d", month = m)
+  d <- dplyr::as_tibble(z$data) %>%
+    dplyr::select(depth, area, par, kdpar, parbottom) %>%
+    dplyr::mutate(depth = -depth)
+  d_one <- d %>% # one line summary for this location
+    dplyr::summarise_all(mean) %>%
+    dplyr::mutate(
+      id = geo$id[j],
+      month = m,
+      n = nrow(d),
+      parbottom10 = par * exp(-kdpar * 10)
+    )
+  light_month <- dplyr::bind_rows(light_month, d_one)
+  light_month <- light_month %>% 
+    dplyr::select(id, month, everything())
+  }
+}
+write_csv(x = light_month, file = "data/light_month.csv")
+writexl::write_xlsx(x = light_month, path = "data/light_month.xlxs")
+light_by_id_month <- light_month %>% 
+  dplyr::group_by(id) %>% 
+  dplyr::summarise(min = min(parbottom10),
+                   max = max(parbottom10)
+  )
+```
+
+```{r joined data, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+# We use the global ocean reanalysis for the Global Ocean and Sea Ice Physics (GLORYS) data product (https://resources.marine.copernicus.eu/?option=com_csw&view=details&product_id=GLOBAL_REANALYSIS_PHY_001_030). GLORYS2V4 covers the period 1993-2018. Data extraction was performed by Robert Schelgel.
+# 
+# If the npp data were collected outside the time period covered GLORYS, the start and end year of the observations are adjusted to get GLORYS temperature data anyway, for example the average 1993-2018.
+# 
+# 
+# # Function for finding nearest site and averaging over nearest depths
+# site_data_match <- function(site){
+#   
+#   # The nearest depths
+#   depth_index <- unique(d_temp$depth)
+#   depth_min <- depth_index[FNN::knnx.index(depth_index, # The values to be queried 
+#                                            site$Depth_min_m, # The value to find the closest match to
+#                                            k = 1)] # The number of closest values to return
+#   depth_max <- depth_index[FNN::knnx.index(depth_index, site$Depth_max_m, k = 1)]
+#   
+#   # Find nearest site and depth average 
+#   # The lon/lat should already match up exactly
+#   site_data <- left_join(site, d_temp, by = c("lon" = "site_lon", "lat" = "site_lat")) %>% 
+#     filter(depth >= depth_min, depth <= depth_max,
+#            t >= end_yr, t <= end_yr) %>% 
+#     distinct()
+#   
+#   # Exit
+#   return(site_data)
+# }
+# 
+# # Combine dat and d
+# registerDoParallel(cores = 7) # Set number of CPU cores to use. This is overkill, but useful to know about.
+# dat_d <- plyr::ddply(.data = npp2, .variables = c("Entry"), 
+#                      .fun = site_data_match, .parallel = T) %>% 
+#   dplyr::select(Entry:lon, nav_lon:dist, Start_year, End_year, start_yr, end_yr,
+#                 t, Depth_min_m, Depth_max_m, depth, temp)
+# 
+# # Average over the start and end years and depths
+# # This is done as a separate step so one may look at 'dat_d' to ensure that the correct data were extracted
+# dat_d_mean <- dat_d %>% 
+#   group_by(Entry, Site, lat, lon, nav_lat, nav_lon, dist, 
+#            Start_year, End_year, start_yr, end_yr, Depth_min_m, Depth_max_m) %>% 
+#   summarise(temp = mean(temp)) %>% 
+#   ungroup() 
+```
+```{r merger, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+# temp2merge <- dat_d_mean %>% 
+#   dplyr::select(lat, lon, Depth_min_m, Depth_max_m, temp)
+# tmp <- dplyr::left_join(npp, temp2merge, by = c("Lat_converted" = "lat", "Long_converted" = "lon", "Depth_min_m" = "Depth_min_m", "Depth_max_m" = "Depth_max_m"))
+# write_csv(x = tmp, file = paste0("npp_light_temp_", Sys.Date(), ".csv"))
+```
+```{r figure, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+# d <- readr::read_csv("site_data_annual.csv")
+# fig <- ggplot(data = d, aes(x=site_lat, y=temp)) +
+#   geom_point(aes(colour = depth)) +
+#   #labs(Title= "", x = substitute("Bottom PAR"~"(mol photons"~m^{-2}~d^{-1}~")"), y = substitute("Average annual production (kg"~C~m^{-2}~d^{-1}~")")) +
+#   theme_bw() +
+#   theme(axis.text.x=element_text(size=16, color="black"),
+#         axis.title.x=element_text(face="bold", size=16),
+#         axis.text.y=element_text(size=16, color="black"),
+#         axis.title.y=element_text(face="bold", size=16),
+#         plot.title = element_text(face="bold", size=14),
+#         #panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+#   )
+# print(fig)
+# ggsave(fig,filename = paste0(Sys.Date(), "_temp_lat.png"), width = 20, height = 20, units="cm")
+```
+
+
+
