@@ -92,7 +92,7 @@ The goal is to get PAR at specific locations. It can be done anywhere in the glo
 
 ## Results
 
-This script adds the following variables to the tab "GPS Coordinates":
+The file names of the output are "par.csv" and "par.xlsx". This script adds the following variables to the tab "GPS Coordinates":
 
 * mean_depth: mean depth (m) of the cells comprised in the square defined above
 * mean_area: mean area (km2) of the cells comprised in the square defined above
@@ -150,15 +150,16 @@ light_annual <- light_annual %>%
     dplyr::rename(mean_depth = depth, mean_area = area, mean_par = par, 
                   mean_kdpar = kdpar, mean_parbottom = parbottom)
 geo2 <- cbind(geo, light_annual) 
-write_csv(x = geo2, file = "data/geo2.csv")
-writexl::write_xlsx(x = geo2, path = "data/geo2.xlxs")
+write_csv(x = geo2, file = "data2/geo2.csv")
+writexl::write_xlsx(x = geo2, path = "data2/geo2.xlsx")
 ```
 
 ```{r monthly PAR, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+geo2 <- read_csv(file = "data2/geo2.csv")
+  i <- 0
 light_month <-  NULL
   for (j in 1:nrow(geo)) {
     for (m in 1:12) {
-#  for (j in 1:1) {
   i <- i + 1
   print(paste("id =", j, " - month =", m, sep = " "))
   z <- cl_GetData(dirdata = "data/CoastalLight.d",
@@ -190,8 +191,8 @@ light_by_id_month <- light_month %>%
   )
 geo3 <- cbind(geo2, light_by_id_month)
 # save
-write_csv(x = geo3, file = "data/par.csv")
-writexl::write_xlsx(x = geo3, path = "data/par.xlsx")
+write_csv(x = geo3, file = "data2/par.csv")
+writexl::write_xlsx(x = geo3, path = "data2/par.xlsx")
 ```
 
 ```{r joined data, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
