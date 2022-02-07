@@ -102,17 +102,13 @@ This script adds the following variables to the tab "GPS Coordinates":
 * parbottom: mean bottom PAR in mol/(m2 d); it is the mean of the n mean value of bottom PAR of each grid cell (21 years × 12 months = 252 values)
 * parbottom10: PAR at 10 m depth in mol/(m2 d) calculated as parbottom10 = par * exp(kdpar * 10).
 * min_parbottom10: minimum monthly PAR at 10 m depth in mol/(m2 d) calculated as min_parbottom10 = par * exp(-kdpar * 10)
-* mi_parbottom10: maximum monthly PAR at 10 m depth in mol/(m2 d) calculated as min_parbottom10 = par * exp(-kdpar * 10)
+* max_parbottom10: maximum monthly PAR at 10 m depth in mol/(m2 d) calculated as min_parbottom10 = par * exp(-kdpar * 10)
 
 ```{r read Camp data, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
 # https://buckeyemailosu-my.sharepoint.com/personal/grottoli_1_osu_edu/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fgrottoli%5F1%5Fosu%5Fedu%2FDocuments%2FGrottoli%20data%2FGrottoli%20Lab%20DATA%2FMediterranean%20corals%2FMed%20coral%20reef%20review
 geo <- readxl::read_excel(path = "data/Camp et al 2018 Abiotic Literature Search_Annotated_Grottoli v2.xlsx", sheet = "GPS Coordinates")
 geo <- geo %>% 
   dplyr::mutate(id = seq(1:nrow(geo)),
-                #latitude = str_replace_all(latitude, " ", ""), # remove white space
-                #latitude = str_replace_all(latitude, "″", "\""), # replace "
-                #longitude = str_replace_all(longitude, " ", ""), # remove white space
-                #longitude = str_replace_all(longitude, "″", "\""), # replace "
                 lat = dms2dec(latitude),
                 lon = dms2dec(longitude)
   ) %>% 
