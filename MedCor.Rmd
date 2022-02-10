@@ -1,5 +1,5 @@
 ---
-title: "Light MedCor"
+title: "MedCor PAR and temperature"
 author: "Jean-Pierre Gattuso, CNRS-Sorbonne University (jean-pierre.gattuso@imev-mer.fr)"
 date: '`r format(Sys.Date(), "%d %B %Y")`'
 output:
@@ -75,12 +75,14 @@ dms2dec <- function(dms, separators = c("º", "°", "\'", "’", "’’", "\"",
 
 ## Introduction
 
-The goal is to add annual PAR as well as minimum and maximum monthy PAR to the data compilation built on Camp et al. (2018)
-
-
-## Method
+The goal is to add to the data compilation built on Camp et al. (2018):
+- annual mean PAR at a depth of 10 m as well as minimum and maximum mean monthy PAR 
+- annual mean temperature at a depth of 10 m as well as minimum and maximum mean monthy temperature 
 
 I have corrected dozens of mistakes in the geographical coordinates (extra space, wrong quotes). The excel sheet found in the drive is now machine-readable. ** There are many typos that remain to be corrected (Grotolli, Mediterranian...)
+
+## Methods
+### PAR
 
 This script uses the R package CoastalLight described in the following paper:
 
@@ -93,8 +95,6 @@ The goal is to get PAR at specific locations. It can be done anywhere in the glo
 **Important note :**
   Some sites have been skipped (NAs) because no GEBCO coastal (<200 m) cell was found in the square defined above
 
-## Results
-
 The file names of the output are "par.csv" and "par.xlsx". This script adds the following variables to the tab "GPS Coordinates":
 
 * mean_depth: mean depth (m) of the cells comprised in the square defined above
@@ -106,6 +106,7 @@ The file names of the output are "par.csv" and "par.xlsx". This script adds the 
 * parbottom10: PAR at 10 m depth in mol/(m2 d) calculated as parbottom10 = par * exp(kdpar * 10).
 * min_parbottom10: minimum monthly PAR at 10 m depth in mol/(m2 d) calculated as min_parbottom10 = par * exp(-kdpar * 10)
 * max_parbottom10: maximum monthly PAR at 10 m depth in mol/(m2 d) calculated as min_parbottom10 = par * exp(-kdpar * 10)
+
 
 ```{r read Camp data, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
 # https://buckeyemailosu-my.sharepoint.com/personal/grottoli_1_osu_edu/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fgrottoli%5F1%5Fosu%5Fedu%2FDocuments%2FGrottoli%20data%2FGrottoli%20Lab%20DATA%2FMediterranean%20corals%2FMed%20coral%20reef%20review
@@ -127,7 +128,7 @@ if(!dir.exists("data/CoastalLight.d")){
 }
 ```
 
-```{r annual PAR, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+```{r annual PAR, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE, eval = FALSE}
 light_annual <-  NULL
 i <- 0
 for (j in 1:nrow(geo)) {
@@ -157,7 +158,7 @@ write_csv(x = geo2, file = "data/geo2.csv")
 writexl::write_xlsx(x = geo2, path = "data/geo2.xlsx")
 ```
 
-```{r monthly PAR, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE}
+```{r monthly PAR, echo=FALSE, message=FALSE, warning=FALSE, include = TRUE, eval = FALSE}
 geo2 <- read_csv(file = "data/geo2.csv")
   i <- 0
 light_month <-  NULL
@@ -197,14 +198,22 @@ par <- dplyr::full_join(geo2, light_by_id_month, by = "id")
 write_csv(x = par, file = "data/par.csv")
 writexl::write_xlsx(x = par, path = "data/par.xlsx")
 ```
+### Temperature
 
-```{r read MUR data, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
-# GHRSST Level 4 MUR Global Foundation Sea Surface Temperature Analysis  
-# [https://podaac-opendap.jpl.nasa.gov/opendap/hyrax/allData/ghrsst/data/GDS2/L4/GLOB/JPL/MUR/v4.1/README](https://podaac-opendap.jpl.nasa.gov/opendap/hyrax/allData/ghrsst/data/GDS2/L4/GLOB/JPL/MUR/v4.1/README)
-# The time series starts in 2002 but we have used just 2016-2020 and extracted data for 20 of the 431 study sites. For each site, I have calculated the annual mean temperature from the daily measurements, and the minimum and maximum mean monthly means.
+With considerable help from Robert, we use GHRSST Level 4 MUR Global Foundation Sea Surface Temperature Analysis based upon nighttime GHRSST L2P skin and subskin SST observations  from several instruments including the NASA Advanced Microwave  Scanning Radiometer-EOS (AMSRE), the Moderate Resolution Imaging  Spectroradiometer (MODIS) on the NASA Aqua and Terra platforms,  the US Navy microwave WindSat radiometer, and the Advanced Very High  Resolution Radiometer (AVHRR) on several NOAA satellites,  and in situ SST observations from the NOAA iQuam project. Developed by a team led by Dr. Toshio M. Chin from JPL. Data are organized in a YYYY/DDD structure.
 
+Further information on the dataset can be found here:
+
+http://podaac.jpl.nasa.gov/dataset/MUR-JPL-L4-GLOB-v4.1
+
+https://doi.org/10.5067/GHGMR-4FJ04
+
+We have used just 2003-2020 and extracted data for the 431 study sites. Some are on land. For each site, I have calculated the annual mean temperature from the daily measurements, and the minimum and maximum mean monthly means.
+
+```{r read and process MUR data, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 load("data/MUR_data.Rdata")
-mur <- tibble(MUR_data)
+mur <- tibble(MUR_data) %>% 
+  dplyr::filter(t <= as.POSIXct("2020-12-31")) # Year 2021 is incomplete
 annual_temp <- mur %>% 
   group_by(idx) %>% 
   summarise(annual_mean_temp = mean(temp)) %>% 
@@ -218,9 +227,38 @@ min_max_temp <- mur %>%
   ungroup() 
 ```
 ```{r merged data, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+par <- readr::read_csv(file = "data/par.csv")
 temp <- full_join(annual_temp,  min_max_temp, by = "idx") %>% 
   dplyr::rename(id = idx)
-par_temp <- full_join(par,  temp, by = "id")
+par_temp <- full_join(par, temp, by = "id")
 write_csv(x = par_temp, file = "data/par_temp.csv")
 writexl::write_xlsx(x = par_temp, path = "data/par_temp")
 ```
+
+## Results
+```{r analyses, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+par_temp %>% 
+  tidyr::pivot_longer(cols = ends_with("parbottom10"),
+                      names_to = "param", 
+                      values_to = "value") %>% 
+  ggplot(aes(x = param, y = value)) +
+  geom_boxplot(na.rm = TRUE) +
+  xlab("Variable") +
+  labs(title = "PAR (mol/(m2 d))")
+
+par_temp %>% 
+  tidyr::pivot_longer(cols =ends_with("_temp"),
+                      names_to = "param", 
+                      values_to = "value") %>% 
+  ggplot(aes(x = param, y = value)) +
+  geom_boxplot(na.rm = TRUE) +
+  xlab("Variable") +
+  labs(title = "Temperature (°C)")
+```
+
+
+## To do:
+
+- Check lat and lon of sites that the PAR script thinks are on land or at depths > 200 m
+- Define Mediterranean sites on interest from which PAR and temp should be obtained as above. I suggest that Nuria starts this list and that we all build on it.
+- Last, we need to discuss how to merge the tab “Raw data” with the csv file I am generating.
